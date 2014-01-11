@@ -7,7 +7,8 @@
         [ring.middleware.file]
         [ring.util.response]
         [hiccup core util page]
-        [stringtemplate-clj core])
+        [stringtemplate-clj core]
+        [clojure.core.memoize :only [memo-clear!]])
 
   (:use static.config :reload-all)
   (:use static.io :reload-all)
@@ -42,8 +43,11 @@
 (defn post-url 
   "Given a post file return its URL."
   [file]
-  (let [name (FilenameUtils/getBaseName (str file))]
-    (str (apply str (interleave (repeat \/) (.split name "-" 4))) "/")))
+  (let [name (FilenameUtils/getBaseName (str file))
+        url (str (apply str (interleave (repeat \/) (.split name "-" 4))) "/")]
+    (if (empty? (:post-out-subdir (config)))
+      url
+      (str "/" (:post-out-subdir (config)) url))))
 
 (defn site-url [f & [ext]]
   (-> (str f)
@@ -304,7 +308,10 @@
     #(let [f %
            [metadata content] (read-doc f)
            out-file (reduce (fn[h v] (.replaceFirst h "-" "/")) 
-                            (FilenameUtils/getBaseName (str f)) (range 3))]
+                            (FilenameUtils/getBaseName (str f)) (range 3))
+           out-file (if (empty? (:post-out-subdir (config)))
+                      out-file
+                      (str (:post-out-subdir (config)) "/" out-file))]
        
        (if (empty? @content)
          (warn (str "Empty Content: " f)))
@@ -375,6 +382,7 @@
                    (watcher/on-change (fn [_]
                                         (info "Rebuilding site...")
                                         (try
+                                          (memo-clear! read-template)
                                           (create)
                                           (catch Exception e
                                             (warn (str "Exception thrown while building site! " e))))))))
